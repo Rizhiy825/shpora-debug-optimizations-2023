@@ -1,3 +1,6 @@
+using System;
+using JPEG.Images;
+
 namespace JPEG.Processor;
 
 public interface IJpegProcessor

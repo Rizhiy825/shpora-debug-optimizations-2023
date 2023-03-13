@@ -35,24 +35,30 @@ public class JpegProcessor : IJpegProcessor
 	private static CompressedImage Compress(Matrix matrix, int quality = 50)
 	{
 		var allQuantizedBytes = new List<byte>();
+		var channelFreqs = new double[DCTSize, DCTSize];
+        var quantizedFreqs = new byte[channelFreqs.GetLength(0), channelFreqs.GetLength(1)];
+        var quantizationMatrix = GetQuantizationMatrix(quality);
+        var subMatrix = new double[DCTSize, DCTSize];
+        var quantizedBytes = new byte[quantizedFreqs.GetLength(0) * quantizedFreqs.GetLength(1)];
+        var selectorFuncs = new Func<Pixel, double>[] {p => p.Y, p => p.Cb, p => p.Cr};
+        
+        for (var y = 0; y < matrix.Height; y += DCTSize)
+        {
+            for (var x = 0; x < matrix.Width; x += DCTSize)
+            {
+                foreach (var selector in selectorFuncs)
+                {
+                    subMatrix = GetSubMatrix(matrix, y, DCTSize, x, DCTSize, selector, subMatrix);
+                    ShiftMatrixValues(subMatrix, -128);
+                    DCT.DCT2D(subMatrix, channelFreqs);
+                    quantizedFreqs = Quantize(channelFreqs, quantizationMatrix, quantizedFreqs);
+                    quantizedBytes = (byte[])ZigZagScan(quantizedFreqs, quantizedBytes);
+                    allQuantizedBytes.AddRange(quantizedBytes);
+                }
+            }
+        }
 
-		for (var y = 0; y < matrix.Height; y += DCTSize)
-		{
-			for (var x = 0; x < matrix.Width; x += DCTSize)
-			{
-				foreach (var selector in new Func<Pixel, double>[] { p => p.Y, p => p.Cb, p => p.Cr })
-				{
-					var subMatrix = GetSubMatrix(matrix, y, DCTSize, x, DCTSize, selector);
-					ShiftMatrixValues(subMatrix, -128);
-					var channelFreqs = DCT.DCT2D(subMatrix);
-					var quantizedFreqs = Quantize(channelFreqs, quality);
-					var quantizedBytes = ZigZagScan(quantizedFreqs);
-					allQuantizedBytes.AddRange(quantizedBytes);
-				}
-			}
-		}
-
-		long bitsCount;
+        long bitsCount;
 		Dictionary<BitsWithLength, byte> decodeTable;
 		var compressedBytes = HuffmanCodec.Encode(allQuantizedBytes, out decodeTable, out bitsCount);
 
@@ -69,27 +75,49 @@ public class JpegProcessor : IJpegProcessor
 		using (var allQuantizedBytes =
 		       new MemoryStream(HuffmanCodec.Decode(image.CompressedBytes, image.DecodeTable, image.BitsCount)))
 		{
-			for (var y = 0; y < image.Height; y += DCTSize)
-			{
-				for (var x = 0; x < image.Width; x += DCTSize)
-				{
-					var _y = new double[DCTSize, DCTSize];
-					var cb = new double[DCTSize, DCTSize];
-					var cr = new double[DCTSize, DCTSize];
-					foreach (var channel in new[] { _y, cb, cr })
-					{
-						var quantizedBytes = new byte[DCTSize * DCTSize];
-						allQuantizedBytes.ReadAsync(quantizedBytes, 0, quantizedBytes.Length).Wait();
-						var quantizedFreqs = ZigZagUnScan(quantizedBytes);
-						var channelFreqs = DeQuantize(quantizedFreqs, image.Quality);
-						DCT.IDCT2D(channelFreqs, channel);
-						ShiftMatrixValues(channel, 128);
-					}
+            var _y = new double[DCTSize, DCTSize];
+            var cb = new double[DCTSize, DCTSize];
+            var cr = new double[DCTSize, DCTSize];
+			var channels = new[]{_y, cb, cr};
 
-					SetPixels(result, _y, cb, cr, PixelFormat.YCbCr, y, x);
-				}
-			}
-		}
+            #region MyRegion
+            //var first = new int[,]{{1, 2, 3},{3, 2, 1}};
+            //var second = new int[,] { { 4, 5, 6 }, { 6, 5, 4 } };
+            //var third = new int[,] { { 7, 8, 9 }, { 9, 8, 7 } };
+
+            //         var general = new[] { first, second, third };
+
+            //         foreach (var i in general)
+            //         {
+            //             var l = i;
+            //         }
+            //var channels 
+            #endregion
+
+            var quantizationMatrix = GetQuantizationMatrix(image.Quality);
+            var quantizedBytes = new byte[DCTSize * DCTSize];
+			var quantizedFreqs = new byte[DCTSize, DCTSize];
+			var channelFreqs = new double[quantizedFreqs.GetLength(0), quantizedFreqs.GetLength(1)];
+
+            for (var y = 0; y < image.Height; y += DCTSize)
+            {
+                for (var x = 0; x < image.Width; x += DCTSize)
+                {
+                    //_y cb and cr
+                    foreach (var channel in channels)
+                    {
+                        //quantized
+                        allQuantizedBytes.ReadAsync(quantizedBytes, 0, quantizedBytes.Length).Wait();
+                        quantizedFreqs = ZigZagUnScan(quantizedBytes, quantizedFreqs);
+                        channelFreqs = DeQuantize(quantizedFreqs, quantizationMatrix, channelFreqs);
+                        DCT.IDCT2D(channelFreqs, channel);
+                        ShiftMatrixValues(channel, 128);
+                    }
+
+                    SetPixels(result, _y, cb, cr, PixelFormat.YCbCr, y, x);
+                }
+            }
+        }
 
 		return result;
 	}
@@ -115,110 +143,216 @@ public class JpegProcessor : IJpegProcessor
 			matrix.Pixels[yOffset + y, xOffset + x] = new Pixel(a[y, x], b[y, x], c[y, x], format);
 	}
 
-	private static double[,] GetSubMatrix(Matrix matrix, int yOffset, int yLength, int xOffset, int xLength,
-		Func<Pixel, double> componentSelector)
+	public static double[,] GetSubMatrix(Matrix matrix, int yOffset, int yLength, int xOffset, int xLength,
+		Func<Pixel, double> componentSelector, double[,] subMatrix)
 	{
-		var result = new double[yLength, xLength];
 		for (var j = 0; j < yLength; j++)
 		for (var i = 0; i < xLength; i++)
-			result[j, i] = componentSelector(matrix.Pixels[yOffset + j, xOffset + i]);
-		return result;
+			subMatrix[j, i] = componentSelector(matrix.Pixels[yOffset + j, xOffset + i]);
+		return subMatrix;
 	}
 
-	private static IEnumerable<byte> ZigZagScan(byte[,] channelFreqs)
-	{
-		return new[]
-		{
-			channelFreqs[0, 0], channelFreqs[0, 1], channelFreqs[1, 0], channelFreqs[2, 0], channelFreqs[1, 1],
-			channelFreqs[0, 2], channelFreqs[0, 3], channelFreqs[1, 2],
-			channelFreqs[2, 1], channelFreqs[3, 0], channelFreqs[4, 0], channelFreqs[3, 1], channelFreqs[2, 2],
-			channelFreqs[1, 3], channelFreqs[0, 4], channelFreqs[0, 5],
-			channelFreqs[1, 4], channelFreqs[2, 3], channelFreqs[3, 2], channelFreqs[4, 1], channelFreqs[5, 0],
-			channelFreqs[6, 0], channelFreqs[5, 1], channelFreqs[4, 2],
-			channelFreqs[3, 3], channelFreqs[2, 4], channelFreqs[1, 5], channelFreqs[0, 6], channelFreqs[0, 7],
-			channelFreqs[1, 6], channelFreqs[2, 5], channelFreqs[3, 4],
-			channelFreqs[4, 3], channelFreqs[5, 2], channelFreqs[6, 1], channelFreqs[7, 0], channelFreqs[7, 1],
-			channelFreqs[6, 2], channelFreqs[5, 3], channelFreqs[4, 4],
-			channelFreqs[3, 5], channelFreqs[2, 6], channelFreqs[1, 7], channelFreqs[2, 7], channelFreqs[3, 6],
-			channelFreqs[4, 5], channelFreqs[5, 4], channelFreqs[6, 3],
-			channelFreqs[7, 2], channelFreqs[7, 3], channelFreqs[6, 4], channelFreqs[5, 5], channelFreqs[4, 6],
-			channelFreqs[3, 7], channelFreqs[4, 7], channelFreqs[5, 6],
-			channelFreqs[6, 5], channelFreqs[7, 4], channelFreqs[7, 5], channelFreqs[6, 6], channelFreqs[5, 7],
-			channelFreqs[6, 7], channelFreqs[7, 6], channelFreqs[7, 7]
-		};
-	}
+	private static IEnumerable<byte> ZigZagScan(byte[,] channelFreqs, byte[] quantizedFreqs)
+    {
+        quantizedFreqs[0] = channelFreqs[0, 0];
+        quantizedFreqs[1] = channelFreqs[0, 1];
+        quantizedFreqs[2] = channelFreqs[1, 0];
+        quantizedFreqs[3] = channelFreqs[2, 0];
+        quantizedFreqs[4] = channelFreqs[1, 1];
+        quantizedFreqs[5] = channelFreqs[0, 2];
+        quantizedFreqs[6] = channelFreqs[0, 3];
+        quantizedFreqs[7] = channelFreqs[1, 2];
+        quantizedFreqs[8] = channelFreqs[2, 1];
+        quantizedFreqs[9] = channelFreqs[3, 0];
+        quantizedFreqs[10] = channelFreqs[4, 0];
+        quantizedFreqs[11] = channelFreqs[3, 1];
+        quantizedFreqs[12] = channelFreqs[2, 2];
+        quantizedFreqs[13] = channelFreqs[1, 3];
+        quantizedFreqs[14] = channelFreqs[0, 4];
+        quantizedFreqs[15] = channelFreqs[0, 5];
 
-	private static byte[,] ZigZagUnScan(IReadOnlyList<byte> quantizedBytes)
-	{
-		return new[,]
-		{
-			{
-				quantizedBytes[0], quantizedBytes[1], quantizedBytes[5], quantizedBytes[6], quantizedBytes[14],
-				quantizedBytes[15], quantizedBytes[27], quantizedBytes[28]
-			},
-			{
-				quantizedBytes[2], quantizedBytes[4], quantizedBytes[7], quantizedBytes[13], quantizedBytes[16],
-				quantizedBytes[26], quantizedBytes[29], quantizedBytes[42]
-			},
-			{
-				quantizedBytes[3], quantizedBytes[8], quantizedBytes[12], quantizedBytes[17], quantizedBytes[25],
-				quantizedBytes[30], quantizedBytes[41], quantizedBytes[43]
-			},
-			{
-				quantizedBytes[9], quantizedBytes[11], quantizedBytes[18], quantizedBytes[24], quantizedBytes[31],
-				quantizedBytes[40], quantizedBytes[44], quantizedBytes[53]
-			},
-			{
-				quantizedBytes[10], quantizedBytes[19], quantizedBytes[23], quantizedBytes[32], quantizedBytes[39],
-				quantizedBytes[45], quantizedBytes[52], quantizedBytes[54]
-			},
-			{
-				quantizedBytes[20], quantizedBytes[22], quantizedBytes[33], quantizedBytes[38], quantizedBytes[46],
-				quantizedBytes[51], quantizedBytes[55], quantizedBytes[60]
-			},
-			{
-				quantizedBytes[21], quantizedBytes[34], quantizedBytes[37], quantizedBytes[47], quantizedBytes[50],
-				quantizedBytes[56], quantizedBytes[59], quantizedBytes[61]
-			},
-			{
-				quantizedBytes[35], quantizedBytes[36], quantizedBytes[48], quantizedBytes[49], quantizedBytes[57],
-				quantizedBytes[58], quantizedBytes[62], quantizedBytes[63]
-			}
-		};
-	}
+        quantizedFreqs[16] = channelFreqs[1, 4];
+        quantizedFreqs[17] = channelFreqs[2, 3];
+        quantizedFreqs[18] = channelFreqs[3, 2];
+        quantizedFreqs[19] = channelFreqs[4, 1];
+        quantizedFreqs[20] = channelFreqs[5, 0];
+        quantizedFreqs[21] = channelFreqs[6, 0];
+        quantizedFreqs[22] = channelFreqs[5, 1];
+        quantizedFreqs[23] = channelFreqs[4, 2];
+        quantizedFreqs[24] = channelFreqs[3, 3];
+        quantizedFreqs[25] = channelFreqs[2, 4];
+        quantizedFreqs[26] = channelFreqs[1, 5];
+        quantizedFreqs[27] = channelFreqs[0, 6];
+        quantizedFreqs[28] = channelFreqs[0, 7];
+        quantizedFreqs[29] = channelFreqs[1, 6];
+        quantizedFreqs[30] = channelFreqs[2, 5];
+        quantizedFreqs[31] = channelFreqs[3, 4];
 
-	private static byte[,] Quantize(double[,] channelFreqs, int quality)
-	{
-		var result = new byte[channelFreqs.GetLength(0), channelFreqs.GetLength(1)];
+        quantizedFreqs[32] = channelFreqs[4, 3];
+        quantizedFreqs[33] = channelFreqs[5, 2];
+        quantizedFreqs[34] = channelFreqs[6, 1];
+        quantizedFreqs[35] = channelFreqs[7, 0];
+        quantizedFreqs[36] = channelFreqs[7, 1];
+        quantizedFreqs[37] = channelFreqs[6, 2];
+        quantizedFreqs[38] = channelFreqs[5, 3];
+        quantizedFreqs[39] = channelFreqs[4, 4];
+        quantizedFreqs[40] = channelFreqs[3, 5];
+        quantizedFreqs[41] = channelFreqs[2, 6];
+        quantizedFreqs[42] = channelFreqs[1, 7];
+        quantizedFreqs[43] = channelFreqs[2, 7];
+        quantizedFreqs[44] = channelFreqs[3, 6];
+        quantizedFreqs[45] = channelFreqs[4, 5];
+        quantizedFreqs[46] = channelFreqs[5, 4];
+        quantizedFreqs[47] = channelFreqs[6, 3];
 
-		var quantizationMatrix = GetQuantizationMatrix(quality);
+        quantizedFreqs[48] = channelFreqs[7, 2];
+        quantizedFreqs[49] = channelFreqs[7, 3];
+        quantizedFreqs[50] = channelFreqs[6, 4];
+        quantizedFreqs[51] = channelFreqs[5, 5];
+        quantizedFreqs[52] = channelFreqs[4, 6];
+        quantizedFreqs[53] = channelFreqs[3, 7];
+        quantizedFreqs[54] = channelFreqs[4, 7];
+        quantizedFreqs[55] = channelFreqs[5, 6];
+        quantizedFreqs[56] = channelFreqs[6, 5];
+        quantizedFreqs[57] = channelFreqs[7, 4];
+        quantizedFreqs[58] = channelFreqs[7, 5];
+        quantizedFreqs[59] = channelFreqs[6, 6];
+        quantizedFreqs[60] = channelFreqs[5, 7];
+        quantizedFreqs[61] = channelFreqs[6, 7];
+        quantizedFreqs[62] = channelFreqs[7, 6];
+        quantizedFreqs[63] = channelFreqs[7, 7];
+
+        #region MyRegion
+        //      {
+        //	channelFreqs[0, 0], channelFreqs[0, 1], channelFreqs[1, 0], channelFreqs[2, 0], channelFreqs[1, 1],
+        //	channelFreqs[0, 2], channelFreqs[0, 3], channelFreqs[1, 2],
+        //	channelFreqs[2, 1], channelFreqs[3, 0], channelFreqs[4, 0], channelFreqs[3, 1], channelFreqs[2, 2],
+        //	channelFreqs[1, 3], channelFreqs[0, 4], channelFreqs[0, 5],
+        //	channelFreqs[1, 4], 
+
+        //          channelFreqs[2, 3], channelFreqs[3, 2], channelFreqs[4, 1], channelFreqs[5, 0],
+        //	channelFreqs[6, 0], channelFreqs[5, 1], channelFreqs[4, 2],
+        //	channelFreqs[3, 3], channelFreqs[2, 4], channelFreqs[1, 5], channelFreqs[0, 6], channelFreqs[0, 7],
+        //	channelFreqs[1, 6], channelFreqs[2, 5], channelFreqs[3, 4],
+
+        //	channelFreqs[4, 3], channelFreqs[5, 2], channelFreqs[6, 1], channelFreqs[7, 0], channelFreqs[7, 1],
+        //	channelFreqs[6, 2], channelFreqs[5, 3], channelFreqs[4, 4],
+        //	channelFreqs[3, 5], channelFreqs[2, 6], channelFreqs[1, 7], channelFreqs[2, 7], channelFreqs[3, 6],
+        //	channelFreqs[4, 5], channelFreqs[5, 4], channelFreqs[6, 3],
+
+        //	channelFreqs[7, 2], channelFreqs[7, 3], channelFreqs[6, 4], channelFreqs[5, 5], channelFreqs[4, 6],
+        //	channelFreqs[3, 7], channelFreqs[4, 7], channelFreqs[5, 6],
+        //	channelFreqs[6, 5], channelFreqs[7, 4], channelFreqs[7, 5], channelFreqs[6, 6], channelFreqs[5, 7],
+        //	channelFreqs[6, 7], channelFreqs[7, 6], channelFreqs[7, 7]
+        //};
+        #endregion
+
+        return quantizedFreqs;
+    }
+
+    private static byte[,] ZigZagUnScan(IReadOnlyList<byte> quantizedBytes, byte[,] outputFreq)
+	{
+		outputFreq[0,0] = quantizedBytes[0];
+		outputFreq[0,1] = quantizedBytes[1];
+		outputFreq[0,2] = quantizedBytes[5];
+		outputFreq[0,3] = quantizedBytes[6];
+		outputFreq[0,4] = quantizedBytes[14];
+		outputFreq[0,5] = quantizedBytes[15];
+		outputFreq[0,6] = quantizedBytes[27];
+		outputFreq[0,7] = quantizedBytes[28];
+
+        outputFreq[1, 0] = quantizedBytes[2];
+        outputFreq[1, 1] = quantizedBytes[4];
+        outputFreq[1, 2] = quantizedBytes[7];
+        outputFreq[1, 3] = quantizedBytes[13];
+        outputFreq[1, 4] = quantizedBytes[16];
+        outputFreq[1, 5] = quantizedBytes[26];
+        outputFreq[1, 6] = quantizedBytes[29];
+        outputFreq[1, 7] = quantizedBytes[42];
+
+        outputFreq[2, 0] = quantizedBytes[3];
+        outputFreq[2, 1] = quantizedBytes[8];
+        outputFreq[2, 2] = quantizedBytes[12];
+        outputFreq[2, 3] = quantizedBytes[17];
+        outputFreq[2, 4] = quantizedBytes[25];
+        outputFreq[2, 5] = quantizedBytes[30];
+        outputFreq[2, 6] = quantizedBytes[41];
+        outputFreq[2, 7] = quantizedBytes[43];
+
+        outputFreq[3, 0] = quantizedBytes[9];
+        outputFreq[3, 1] = quantizedBytes[11];
+        outputFreq[3, 2] = quantizedBytes[18];
+        outputFreq[3, 3] = quantizedBytes[24];
+        outputFreq[3, 4] = quantizedBytes[31];
+        outputFreq[3, 5] = quantizedBytes[40];
+        outputFreq[3, 6] = quantizedBytes[44];
+        outputFreq[3, 7] = quantizedBytes[53];
+
+        outputFreq[4, 0] = quantizedBytes[10];
+        outputFreq[4, 1] = quantizedBytes[19];
+        outputFreq[4, 2] = quantizedBytes[23];
+        outputFreq[4, 3] = quantizedBytes[32];
+        outputFreq[4, 4] = quantizedBytes[39];
+        outputFreq[4, 5] = quantizedBytes[45];
+        outputFreq[4, 6] = quantizedBytes[52];
+        outputFreq[4, 7] = quantizedBytes[54];
+
+        outputFreq[5, 0] = quantizedBytes[20];
+        outputFreq[5, 1] = quantizedBytes[22];
+        outputFreq[5, 2] = quantizedBytes[33];
+        outputFreq[5, 3] = quantizedBytes[38];
+        outputFreq[5, 4] = quantizedBytes[46];
+        outputFreq[5, 5] = quantizedBytes[51];
+        outputFreq[5, 6] = quantizedBytes[55];
+        outputFreq[5, 7] = quantizedBytes[60];
+
+        outputFreq[6, 0] = quantizedBytes[21];
+        outputFreq[6, 1] = quantizedBytes[34];
+        outputFreq[6, 2] = quantizedBytes[37];
+        outputFreq[6, 3] = quantizedBytes[47];
+        outputFreq[6, 4] = quantizedBytes[50];
+        outputFreq[6, 5] = quantizedBytes[56];
+        outputFreq[6, 6] = quantizedBytes[59];
+        outputFreq[6, 7] = quantizedBytes[61];
+
+        outputFreq[7, 0] = quantizedBytes[35];
+        outputFreq[7, 1] = quantizedBytes[36];
+        outputFreq[7, 2] = quantizedBytes[48];
+        outputFreq[7, 3] = quantizedBytes[49];
+        outputFreq[7, 4] = quantizedBytes[57];
+        outputFreq[7, 5] = quantizedBytes[58];
+        outputFreq[7, 6] = quantizedBytes[62];
+        outputFreq[7, 7] = quantizedBytes[63];
+
+        return outputFreq;
+    }
+
+	private static byte[,] Quantize(double[,] channelFreqs, int[,] quantizationMatrix, byte[,] quantizedFreqs)
+	{
 		for (int y = 0; y < channelFreqs.GetLength(0); y++)
 		{
 			for (int x = 0; x < channelFreqs.GetLength(1); x++)
 			{
-				result[y, x] = (byte)(channelFreqs[y, x] / quantizationMatrix[y, x]);
+                quantizedFreqs[y, x] = (byte)(channelFreqs[y, x] / quantizationMatrix[y, x]);
 			}
 		}
 
-		return result;
-	}
+        return quantizedFreqs;
+    }
 
-	private static double[,] DeQuantize(byte[,] quantizedBytes, int quality)
+	private static double[,] DeQuantize(byte[,] quantizedBytes, int[,] quantizationMatrix, double[,] channelFreqs)
 	{
-		var result = new double[quantizedBytes.GetLength(0), quantizedBytes.GetLength(1)];
-		var quantizationMatrix = GetQuantizationMatrix(quality);
-
 		for (int y = 0; y < quantizedBytes.GetLength(0); y++)
 		{
 			for (int x = 0; x < quantizedBytes.GetLength(1); x++)
 			{
-				result[y, x] =
+                channelFreqs[y, x] =
 					((sbyte)quantizedBytes[y, x]) *
 					quantizationMatrix[y, x]; //NOTE cast to sbyte not to loose negative numbers
 			}
 		}
 
-		return result;
+		return channelFreqs;
 	}
 
 	private static int[,] GetQuantizationMatrix(int quality)
