@@ -39,7 +39,7 @@ public class GetSubMatrixBenchmark
             {
                 foreach (var selector in selectorFuncs)
                 {
-                    subMatrix = JpegProcessor.GetSubMatrix(imageMatrix, y, DCTSize, x, DCTSize, selector, subMatrix);
+                    //subMatrix = JpegProcessor.GetSubMatrix(imageMatrix, y, DCTSize, x, DCTSize, selector, subMatrix);
                 }
             }
         }

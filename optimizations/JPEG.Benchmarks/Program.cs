@@ -8,7 +8,10 @@ internal class Program
 	public static void Main(string[] args)
 	{
 		//BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
-        BenchmarkRunner.Run<JpegProcessorBenchmark>();
+        //BenchmarkRunner.Run<DefaultJpegProcBenchmark>();
+        //BenchmarkRunner.Run<ParallelJpegBenchmark>();
+        //BenchmarkRunner.Run<WithoutMagicJpegProcessBench>();
+        BenchmarkRunner.Run<FFTCookeyTukeyBenchmark>();
         //BenchmarkRunner.Run<GetSubMatrixBenchmark>();
     }
 }
