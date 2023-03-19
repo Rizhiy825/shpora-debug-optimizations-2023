@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using JPEG.Processor;
 using System.Numerics;
+using System;
 
 namespace JPEG.Utilities;
 
@@ -17,6 +18,7 @@ public static class Buffer
     public static Complex[] forwardDoubleBuffer = new Complex[2];
     public static List<Complex[]> forwardSingleBuffers = InitSingleBuffers();
 
+    public const float Omega = (float)(-2.0 * Math.PI / 2.0);
     private static Complex[][] InitComplexes(int height, int width)
     {
         var matrix = new Complex[height][];

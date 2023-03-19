@@ -13,5 +13,6 @@ internal class Program
         //BenchmarkRunner.Run<WithoutMagicJpegProcessBench>();
         //BenchmarkRunner.Run<FFTV2Benchmark>();
         //BenchmarkRunner.Run<FFTV3Benchmark>();
+        //BenchmarkRunner.Run<FFTPfrallelBenchmark>();
     }
 }

@@ -12,7 +12,7 @@ internal class Program
 	{
 			Console.WriteLine(IntPtr.Size == 8 ? "64-bit version" : "32-bit version");
 			
-            var processor = JpegProcFFTV3.Init;
+            var processor = JpegProcFFTParallel.Init;
 			
             var sw = Stopwatch.StartNew();
 			var imagePath = @"sample.bmp";

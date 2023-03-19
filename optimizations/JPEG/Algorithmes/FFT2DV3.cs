@@ -2,6 +2,7 @@
 using System.Numerics;
 using System;
 using System.Drawing;
+using JPEG.Processor;
 
 namespace JPEG.Algorithmes;
 
@@ -15,15 +16,16 @@ public class FFT2DV3
 
     public Complex[][] ToComplex(Bitmap image, int yOffset, int xOffset, Func<Color, double> channelSelector, Complex[][] complexes)
     {
-        var edgeSize = complexes.GetLength(0);
+        var edgeSize = JpegProcFFTV3.DCTSize;
 
         for (var y = 0; y < edgeSize; y++)
         {
             for (var x = 0; x < edgeSize; x++)
             {
-                var pixel = new Complex(channelSelector(image.GetPixel(xOffset + x, yOffset + y)), 0);
-
-                complexes[y][x] = pixel;
+                lock (image)
+                {
+                    complexes[y][x] = new Complex(channelSelector(image.GetPixel(xOffset + x, yOffset + y)), 0);
+                }
             }
         }
         return complexes;
@@ -31,7 +33,7 @@ public class FFT2DV3
 
     public double[,] Inverse(Complex[][] inputComplex, Complex[][] bufferP, Complex[][] bufferF, Complex[][] bufferT, double[,] map)
     {
-        var height = inputComplex.GetLength(0);
+        var height = JpegProcFFTV3.DCTSize;
 
         //CALCULATE P
         for (var l = 0; l < height; l++)
@@ -65,17 +67,18 @@ public class FFT2DV3
     {
         //CONVERT TO COMPLEX NUMBERS
         complexes = ToComplex(image, yOffset, xOffset, channelSelector, complexes);
+        var edge = JpegProcFFTV3.DCTSize;
 
         //CALCULATE P
-        for (var l = 0; l < complexes.GetLength(0); l++)
+        for (var l = 0; l < edge; l++)
         {
             bufferP[l] = fft.Forward(complexes[l], bufferP[l]);
         }
 
         //TANSPOSE AND COMPUTE
-        for (var l = 0; l < complexes.GetLength(0); l++)
+        for (var l = 0; l < edge; l++)
         {
-            for (var k = 0; k < complexes.GetLength(0); k++)
+            for (var k = 0; k < edge; k++)
             {
                 bufferT[l][k] = bufferP[k][l];
             }
