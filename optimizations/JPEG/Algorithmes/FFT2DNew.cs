@@ -7,12 +7,10 @@ namespace JPEG.Algorithmes;
 
 public class FFT2DNew
 {
-    private int Size;
     private FFTNew fft;
-    public FFT2DNew(int size)
+    public FFT2DNew()
     {
-        Size = size;
-        fft = new FFTNew(size);
+        fft = new FFTNew(8);
     }
 
     public Complex[][] ToComplex(Matrix image, Func<Pixel, double> channelSelector)

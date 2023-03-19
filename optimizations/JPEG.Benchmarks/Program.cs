@@ -11,7 +11,6 @@ internal class Program
         //BenchmarkRunner.Run<DefaultJpegProcBenchmark>();
         //BenchmarkRunner.Run<ParallelJpegBenchmark>();
         //BenchmarkRunner.Run<WithoutMagicJpegProcessBench>();
-        BenchmarkRunner.Run<FFTCookeyTukeyBenchmark>();
-        //BenchmarkRunner.Run<GetSubMatrixBenchmark>();
+        BenchmarkRunner.Run<FFTV2Benchmark>();
     }
 }

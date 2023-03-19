@@ -5,9 +5,9 @@ namespace JPEG.Benchmarks.Benchmarks;
 
 [MemoryDiagnoser]
 [SimpleJob(warmupCount: 2, iterationCount: 3)]
-public class ParallelJpegBenchmark
+public class WithoutMagicJpegProcessBenchmark
 {
-    private JpegProcBuffAndParallel jpegProcessor;
+    private JpegProcWithoutMagicFunc jpegProcessor;
     public string imagePath = DefaultJpegProcBenchmark.imagePath;
     public string compressedImagePath = DefaultJpegProcBenchmark.compressedImagePath;
     public string uncompressedImagePath = DefaultJpegProcBenchmark.uncompressedImagePath;
@@ -15,17 +15,17 @@ public class ParallelJpegBenchmark
     [GlobalSetup]
     public void SetUp()
     {
-        jpegProcessor = JpegProcBuffAndParallel.Init;
+        jpegProcessor = JpegProcWithoutMagicFunc.Init;
     }
 
     [Benchmark]
-    public void CompressParallel()
+    public void CompressWithoutMagicFunc()
     {
         jpegProcessor.Compress(imagePath, compressedImagePath);
     }
 
     [Benchmark]
-    public void UncompressParallel()
+    public void UncompressWithoutMagicFunc()
     {
         jpegProcessor.Uncompress(compressedImagePath, uncompressedImagePath);
     }
