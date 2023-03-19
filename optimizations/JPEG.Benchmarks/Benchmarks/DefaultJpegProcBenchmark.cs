@@ -8,9 +8,9 @@ namespace JPEG.Benchmarks.Benchmarks;
 public class DefaultJpegProcBenchmark
 {
 	private IJpegProcessor jpegProcessor;
-	public const string imagePath = @"C:\Users\Artemii\source\repos\Optimization\shpora-debug-optimizations-2023\optimizations\JPEG\bin\Debug\net7.0\sample_short.bmp";
-    public static readonly string compressedImagePath = @"C:\Users\Artemii\source\repos\Optimization\shpora-debug-optimizations-2023\optimizations\JPEG\bin\Debug\net7.0\sample_short.bmp.compressed.70.bmp";
-    public static readonly string uncompressedImagePath = @"C:\Users\Artemii\source\repos\Optimization\shpora-debug-optimizations-2023\optimizations\JPEG\bin\Debug\net7.0\sample_short.bmp.uncompressed.70.bmp";
+	public const string imagePath = @"C:\Users\Artemii\source\repos\Optimization\shpora-debug-optimizations-2023\optimizations\JPEG\bin\Debug\net7.0\sample.bmp";
+    public static readonly string compressedImagePath = @"C:\Users\Artemii\source\repos\Optimization\shpora-debug-optimizations-2023\optimizations\JPEG\bin\Debug\net7.0\sample.bmp.compressed.70.bmp";
+    public static readonly string uncompressedImagePath = @"C:\Users\Artemii\source\repos\Optimization\shpora-debug-optimizations-2023\optimizations\JPEG\bin\Debug\net7.0\sample.bmp.uncompressed.70.bmp";
 
     [GlobalSetup]
 	public void SetUp()
