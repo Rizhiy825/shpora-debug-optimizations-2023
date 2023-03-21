@@ -2,17 +2,12 @@
 using System.Drawing;
 using System.Numerics;
 using System;
+using System.Runtime.CompilerServices;
 
 namespace JPEG.Algorithmes;
 
 public class FFT2DV4
 {
-    private FFTV4 fft;
-    public FFT2DV4()
-    {
-        fft = new FFTV4(8);
-    }
-
     public Complex[][] ToComplex(byte[] image, int yOffset, int xOffset, int channelSelector, Complex[][] complexes)
     {
         var edgeSize = JpegProcFFTV3.DCTSize;
@@ -35,7 +30,7 @@ public class FFT2DV4
         for (var l = 0; l < height; l++)
         {
             var input = inputComplex[l];
-            bufferP[l] = fft.Forward(input, bufferP[l], polarComplex);
+            bufferP[l] = Forward(input, bufferP[l], polarComplex);
         }
         
         for (var l = 0; l < height; l++)
@@ -45,7 +40,7 @@ public class FFT2DV4
                 bufferT[l][k] = bufferP[k][l] / (height * height);
             }
 
-            bufferF[l] = fft.Forward(bufferT[l], bufferF[l], polarComplex);
+            bufferF[l] = Forward(bufferT[l], bufferF[l], polarComplex);
         }
 
         for (var k = 0; k < height; k++)
@@ -58,24 +53,32 @@ public class FFT2DV4
         return map;
     }
 
-    public Complex[][] Forward(byte[] image, int yOffset, int xOffset, int channelSelector, Complex[][] complexes, Complex[][] bufferP, Complex[][] bufferF, Complex[][] bufferT, Complex polarComplex)
+    public Complex[][] Forward(byte[] image, 
+        int yOffset, 
+        int xOffset, 
+        int channelSelector, 
+        Complex[][] complexes, 
+        Complex[][] bufferP, 
+        Complex[][] bufferF, 
+        Complex[][] bufferT, 
+        Complex polarComplex)
     {
         complexes = ToComplex(image, yOffset, xOffset, channelSelector, complexes);
-        var edge = JpegProcFFTV3.DCTSize;
+        var dctDize = JpegProcFFTV3.DCTSize;
         
-        for (var l = 0; l < edge; l++)
+        for (var l = 0; l < dctDize; l++)
         {
-            bufferP[l] = fft.Forward(complexes[l], bufferP[l], polarComplex);
+            bufferP[l] = Forward(complexes[l], bufferP[l], polarComplex);
         }
 
-        for (var l = 0; l < edge; l++)
+        for (var l = 0; l < dctDize; l++)
         {
-            for (var k = 0; k < edge; k++)
+            for (var k = 0; k < dctDize; k++)
             {
                 bufferT[l][k] = bufferP[k][l];
             }
 
-            bufferF[l] = fft.Forward(bufferT[l], bufferF[l], polarComplex);
+            bufferF[l] = Forward(bufferT[l], bufferF[l], polarComplex);
         }
 
         return bufferF;
@@ -86,5 +89,14 @@ public class FFT2DV4
         var index = y * JpegProcFFTParallel.stride + x * 3 + channel;
         var value = image[index];
         return value;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Complex[] Forward(Complex[] input, Complex[] buffer, Complex polarComplex)
+    {
+        input[1] *= polarComplex;
+        buffer[0] = input[0] + input[1];
+        buffer[1] = input[0] - input[1];
+        return buffer;
     }
 }

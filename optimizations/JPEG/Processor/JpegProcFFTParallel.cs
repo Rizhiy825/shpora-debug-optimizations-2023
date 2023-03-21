@@ -40,18 +40,8 @@ public class JpegProcFFTParallel : IJpegProcessor
 
     private CompressedImage Compress(Bitmap image, int quality = 50)
     {
-        BitmapData btmDt = image.LockBits(
-            new Rectangle(0, 0, image.Width, image.Height),
-            ImageLockMode.ReadWrite, image.PixelFormat
-        );
-        IntPtr pointer = btmDt.Scan0;
-        int size = Math.Abs(btmDt.Stride) * image.Height;
-        stride = btmDt.Stride;
-        byte[] pixels = new byte[size];
-        Marshal.Copy(pointer, pixels, 0, size);
+        var imageData = GetBytesFromImage(image);
         
-        
-
         var width = image.Width;
         var height = image.Height;
 
@@ -69,7 +59,7 @@ public class JpegProcFFTParallel : IJpegProcessor
             {
                 for (int x = 0; x < width; x += DCTSize)
                 {
-                    Buffer.complexes = proc.Forward(pixels, y, x, selector,
+                    Buffer.complexes = proc.Forward(imageData.Item1, y, x, selector,
                         Buffer.complexes,
                         Buffer.bufferP,
                         Buffer.bufferF,
@@ -83,10 +73,7 @@ public class JpegProcFFTParallel : IJpegProcessor
                 }
             }
         }
-
-        Marshal.Copy(pixels, 0, pointer, size);
-        image.UnlockBits(btmDt);
-
+        
         long bitsCount;
         Dictionary<BitsWithLength, byte> decodeTable;
         var compressedBytes = HuffmanCodec.Encode(allQuantizedBytes, out decodeTable, out bitsCount);
@@ -100,6 +87,20 @@ public class JpegProcFFTParallel : IJpegProcessor
             Height = image.Height,
             Width = image.Width
         };
+    }
+
+    private Tuple<byte[], nint, BitmapData> GetBytesFromImage(Bitmap image)
+    {
+        BitmapData btmDt = image.LockBits(
+            new Rectangle(0, 0, image.Width, image.Height),
+            ImageLockMode.ReadWrite, image.PixelFormat
+        );
+        IntPtr pointer = btmDt.Scan0;
+        int size = Math.Abs(btmDt.Stride) * image.Height;
+        stride = btmDt.Stride;
+        byte[] pixels = new byte[size];
+        Marshal.Copy(pointer, pixels, 0, size);
+        return Tuple.Create(pixels, pointer, btmDt);
     }
 
     private double[,] ExtractRealPart(Complex[][] complexes, double[,] extracted)
@@ -119,15 +120,7 @@ public class JpegProcFFTParallel : IJpegProcessor
     {
         var result = new Bitmap(image.Width, image.Height, PixelFormat.Format24bppRgb);
 
-        BitmapData btmDt = result.LockBits(
-            new Rectangle(0, 0, result.Width, result.Height),
-            ImageLockMode.ReadWrite, result.PixelFormat
-        );
-
-        IntPtr pointer = btmDt.Scan0;
-        int size = Math.Abs(btmDt.Stride) * result.Height;
-        byte[] pixels = new byte[size];
-        Marshal.Copy(pointer, pixels, 0, size);
+        var imageData = GetBytesFromImage(result);
         
         var resultArray = new double[image.Height, image.Width];
         using (var allQuantizedBytes =
@@ -143,7 +136,6 @@ public class JpegProcFFTParallel : IJpegProcessor
             var quantizationMatrix = GetQuantizationMatrix(Quality);
             var channelFreqs = new double[DCTSize, DCTSize];
             var map = new double[DCTSize, DCTSize];
-            var phase = Convert.ToInt32(Buffer.Omega * -1);
             var polarComplex = Complex.FromPolarCoordinates(1, 0);
 
             foreach (var channel in new[] { r, g, b })
@@ -170,13 +162,9 @@ public class JpegProcFFTParallel : IJpegProcessor
                 }
             }
 
-            SetPixels(pixels, r, g, b);
+            SetPixels(imageData.Item1, r, g, b);
         }
-
-        Marshal.Copy(pixels, 0, pointer, size);
-        result.UnlockBits(btmDt);
-
-
+        
         return result;
     }
 
